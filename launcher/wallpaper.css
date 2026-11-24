@@ -1,0 +1,145 @@
+.aw-pane {
+  position: relative !important;
+  isolation: isolate;
+  background-color: #000;
+}
+
+.aw-clear { background-color: transparent !important; }
+.aw-wallpaper-active .bg-sidebar { background-color: #070709 !important; }
+
+#agy-wallpaper-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: #000;
+}
+
+#agy-wallpaper-layer video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.32;
+}
+
+#agy-wallpaper-layer[hidden] { display: none !important; }
+
+.aw-composer-anchor { position: relative; }
+#agy-tps-meter {
+  position: absolute;
+  left: 10px;
+  bottom: calc(100% + 4px);
+  z-index: 2;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid #38353a;
+  border-radius: 5px;
+  background: #101014;
+  color: #f6f4f5;
+  font: 600 11px/17px system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+#agy-tps-meter > span + span { color: #c4bec4; }
+#agy-tps-meter[data-writing="true"] { border-color: #bd8795; }
+
+.aw-wallpaper-active .aw-pane .agy-user-bubble,
+.aw-wallpaper-active .aw-pane .surface-composer-card {
+  background-color: #101014 !important;
+  color: #f6f4f5;
+}
+
+.aw-wallpaper-active .aw-pane .agy-user-bubble-frame,
+.aw-wallpaper-active .aw-pane .surface-composer {
+  background-color: #30282d !important;
+}
+
+#agy-wallpaper-controls {
+  --aw-background: #09090b;
+  --aw-foreground: #f6f4f5;
+  --aw-muted: #bdb7bb;
+  --aw-border: #40363b;
+  --aw-surface: #171419;
+  --aw-primary: #ffd9df;
+  --aw-primary-text: #30141c;
+  color: var(--aw-foreground);
+  font: 13px/1.45 'Segoe UI', system-ui, sans-serif;
+}
+
+.aw-theme-sidebar { position: relative; }
+.aw-settings-for-theme { max-width: calc(100% - 64px) !important; }
+.aw-theme-sidebar > #agy-wallpaper-controls {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+}
+
+#agy-wallpaper-controls[hidden] { display: none !important; }
+
+#agy-wallpaper-controls button {
+  box-sizing: border-box;
+  border: 1px solid var(--aw-border);
+  border-radius: 7px;
+  min-height: 44px;
+  padding: 6px 10px;
+  color: var(--aw-foreground);
+  background: var(--aw-surface);
+  cursor: pointer;
+  font: inherit;
+}
+
+#agy-wallpaper-controls button:focus-visible {
+  outline: 2px solid #ffccd5;
+  outline-offset: 2px;
+}
+
+#agy-wallpaper-controls button:not(:disabled):hover { border-color: var(--aw-muted); }
+#agy-wallpaper-controls button:disabled { opacity: 0.58; cursor: default; }
+#agy-wallpaper-controls .aw-primary { color: var(--aw-primary-text); background: var(--aw-primary); }
+#agy-wallpaper-controls .aw-delete { color: #ffb9bf; min-width: 55px; }
+#agy-wallpaper-controls .aw-trigger {
+  width: 42px;
+  min-height: 30px;
+  padding: 2px 4px;
+  font-size: 11px;
+  line-height: 1;
+  background: var(--aw-background);
+}
+
+#agy-wallpaper-controls dialog {
+  position: fixed;
+  inset: auto auto 49px 12px;
+  z-index: 120;
+  margin: 0;
+  box-sizing: border-box;
+  width: min(350px, calc(100vw - 24px));
+  max-height: calc(100vh - 108px);
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--aw-border);
+  border-radius: 12px;
+  color: var(--aw-foreground);
+  background: var(--aw-background);
+  box-shadow: 0 12px 32px #0006;
+}
+
+#agy-wallpaper-controls .aw-header,
+#agy-wallpaper-controls .aw-footer,
+#agy-wallpaper-controls .aw-row { display: flex; align-items: center; gap: 7px; }
+#agy-wallpaper-controls .aw-header { justify-content: space-between; padding-bottom: 8px; }
+#agy-wallpaper-controls h2 { margin: 0; font-size: 15px; font-weight: 650; }
+#agy-wallpaper-controls .aw-list { list-style: none; margin: 0 0 12px; padding: 0; }
+#agy-wallpaper-controls .aw-row { border-top: 1px solid var(--aw-border); padding: 6px 0; }
+#agy-wallpaper-controls .aw-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#agy-wallpaper-controls .aw-empty,
+#agy-wallpaper-controls .aw-hint { color: var(--aw-muted); }
+#agy-wallpaper-controls .aw-hint,
+#agy-wallpaper-controls .aw-status { margin: 8px 0 0; }
+#agy-wallpaper-controls .aw-status:empty { display: none; }

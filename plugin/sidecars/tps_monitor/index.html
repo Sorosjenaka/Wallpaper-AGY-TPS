@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="frame-src 'none'; child-src 'none'">
+  <title>TPS Monitor</title>
+  <script src="/preload.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span id="liveDot" class="dot" title="Status sesi"></span>
+      <span class="brand-title">TPS Monitor</span>
+      <span id="liveBadge" class="badge">Memuat…</span>
+    </div>
+    <div class="topbar-actions">
+      <select id="sessionPicker" class="picker" title="Pilih percakapan">
+        <option value="">Percakapan pane ini (auto)</option>
+      </select>
+      <button id="refreshBtn" class="icon-btn" title="Muat ulang sekarang" aria-label="Muat ulang">↻</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero" aria-label="Ringkasan TPS">
+      <div class="hero-main">
+        <div class="eyebrow" id="sessionTitle">Menunggu percakapan…</div>
+        <div class="tps-row">
+          <div class="tps-number" id="tpsNow">—</div>
+          <div class="tps-unit">
+            <span title="Estimasi dari waktu yang tercatat di log percakapan">tok/s (estimasi)</span>
+            <small id="tpsSub">turn terakhir</small>
+          </div>
+        </div>
+        <div class="gauge-wrap" title="Skala 0 – 250 tok/s">
+          <div id="tpsBar" class="gauge-fill"></div>
+        </div>
+        <div class="hero-meta">
+          <span class="chip" id="modelChip">model: —</span>
+          <span class="chip" id="stepChip">step —</span>
+          <span class="chip" id="ageChip">—</span>
+        </div>
+        <p class="stat-sub" id="liveTiming" aria-live="polite"></p>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat">
+          <div class="stat-label">Rata-rata 10 Turn</div>
+          <div class="stat-value" id="statLast10">—</div>
+          <div class="stat-sub" id="statAvg">sesi: —</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Median TPS</div>
+          <div class="stat-value" id="statMedian">—</div>
+          <div class="stat-sub" id="statP90">P90: —</div>
+        </div>
+        <div class="stat" id="ctxCard">
+          <div class="stat-label">Konteks Aktif</div>
+          <div class="stat-value" id="statCtx">—</div>
+          <div class="stat-sub" id="statCtxSub">rata-rata: —</div>
+        </div>
+        <div class="stat" id="cacheCard">
+          <div class="stat-label">Prompt Cache Hit</div>
+          <div class="stat-value" id="statCache">—</div>
+          <div class="stat-sub" id="statCacheSub">input hemat prefill</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Turn Terakhir</div>
+          <div class="stat-value" id="statLastOut">—</div>
+          <div class="stat-sub" id="statLastTime">decode: — · tool: —</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Total Output</div>
+          <div class="stat-value" id="statTotalOut">—</div>
+          <div class="stat-sub" id="statTurns">0 turn · 0 tool</div>
+        </div>
+      </div>
+    </section>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="live" role="tab">Grafik &amp; Turn</button>
+      <button class="tab" data-tab="diag" role="tab">Diagnosa Cepat <span id="diagCount" class="pill">0</span></button>
+      <button class="tab" data-tab="sessions" role="tab">Sesi Lokal</button>
+    </nav>
+
+    <section id="panel-live" class="panel">
+      <div class="card">
+        <div class="card-head">
+          <span>Kecepatan Decode per Turn (40 turn terakhir)</span>
+          <span class="legend">
+            <i class="lg good"></i>≥100
+            <i class="lg ok"></i>50–99
+            <i class="lg warn"></i>&lt;50 tok/s
+          </span>
+        </div>
+        <div id="bars" class="bars" aria-label="Grafik batang TPS per turn"></div>
+        <div id="barDetail" class="bar-detail">Arahkan kursor atau klik batang untuk detail turn.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <span>Riwayat Turn Terbaru</span>
+          <span id="turnWindowLabel" class="muted">—</span>
+        </div>
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Step</th>
+                <th>tok/s</th>
+                <th>Out</th>
+                <th>Decode</th>
+                <th>Konteks</th>
+                <th>Cache</th>
+                <th>Model / Tool</th>
+              </tr>
+            </thead>
+            <tbody id="turnsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-diag" class="panel hidden">
+      <div id="diagList" class="diag-list"></div>
+      <div class="card tips-card">
+        <div class="card-head"><span>Resep TPS Kencang di Antigravity Desktop</span></div>
+        <ol class="tips">
+          <li><strong>Pakai model &amp; effort yang pas:</strong> <code>gemini-3.8-flash-low/medium</code> atau <code>gemini-4-neon-low/medium</code> untuk eksekusi cepat; simpan <code>hydrogen-xhigh</code> hanya untuk arsitektur berat.</li>
+          <li><strong>Reset percakapan sebelum 150k token:</strong> di atas 150k–300k token, waktu prefill per turn membengkak dan memangkas TPS efektif berkali-kali lipat.</li>
+          <li><strong>Pisahkan gambar/video ke subagent:</strong> file media di sesi utama ikut dibaca ulang di setiap turn berikutnya.</li>
+          <li><strong>Jaga jeda antar-turn &lt; 60 detik:</strong> bila prompt cache kedaluwarsa, ratusan ribu token harus di-prefill ulang dari nol.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="panel-sessions" class="panel hidden">
+      <div class="card">
+        <div class="card-head">
+          <span>Percakapan Lokal Terbaru (klik untuk inspeksi)</span>
+          <span class="muted">read-only</span>
+        </div>
+        <div id="sessionsList" class="sessions-list"></div>
+      </div>
+    </section>
+
+    <div id="emptyState" class="empty hidden"></div>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

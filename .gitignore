@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+*.exe
+*.lnk
+*.db
+*.db-*
+*.jsonl
+*.log
+*.tmp
+*.gif
+*.webm
+*.mp4
+.DS_Store

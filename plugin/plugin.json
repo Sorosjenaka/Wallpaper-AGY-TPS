@@ -1,0 +1,18 @@
+{
+  "name": "wallpaper-agy-tps",
+  "displayName": "TPS Monitor",
+  "version": "1.0.0",
+  "description": "Real-time Tokens Per Second (TPS), latency, context size, and prompt-cache monitor sidecar for Google Antigravity Desktop.",
+  "logo": "assets/logo.svg",
+  "author": {
+    "name": "Local Utility"
+  },
+  "keywords": [
+    "tps",
+    "performance",
+    "speed",
+    "latency",
+    "telemetry",
+    "sidecar"
+  ]
+}

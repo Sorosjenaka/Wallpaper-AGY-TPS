@@ -4,7 +4,7 @@ Tema OLED, wallpaper animasi, dan meter **TPS + konteks** untuk Google Antigravi
 
 | Fitur | Cara pakai |
 | --- | --- |
-| Wallpaper | Klik **Tema** di dekat **Settings**. Unggah, ganti, atau hapus GIF, MP4, dan WebM sampai 16 MB. Klik **Minimalkan** untuk menutup panel tema. |
+| Wallpaper | Klik **Tema** di dekat **Settings**. Unggah, ganti, atau hapus GIF, MP4, dan WebM sampai **300 MB**. Klik **Minimalkan** untuk menutup panel tema. |
 | TPS dan konteks | Meter mengikuti percakapan aktif. **≈** menandai estimasi. **—** muncul saat metrik belum tersedia atau judul percakapan ambigu. |
 | Panel detail | Buka **TPS Monitor** dari panel plugin Antigravity. Dari chat Antigravity, Anda juga bisa meminta tautan `sidecar://wallpaper-agy-tps/tps_monitor/`. |
 | Mulai otomatis | Gunakan opsi instalasi saat login di bawah. Untuk memilih wallpaper, gunakan file media Anda sendiri. |
@@ -28,7 +28,7 @@ cd Wallpaper-AGY-TPS
 powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\install-windows.ps1
 ```
 
-Buka **Antigravity Kit** dari Start Menu. Untuk menambahkannya ke startup Windows, jalankan installer yang sama dengan `-StartAtLogin`. Untuk lokasi pemasangan khusus, tambahkan `-AntigravityPath "D:\Apps\Antigravity\Antigravity.exe"`.
+Buka **Antigravity Kit** dari Start Menu. Untuk menambahkannya ke startup Windows, jalankan installer yang sama dengan `-StartAtLogin`. Installer mendaftarkannya di folder Startup dan Registry Run (`HKCU`), jadi wallpaper tetap terpasang setelah restart. Untuk lokasi pemasangan khusus, tambahkan `-AntigravityPath "D:\Apps\Antigravity\Antigravity.exe"`.
 
 ## Instalasi macOS
 
@@ -47,7 +47,7 @@ Untuk menjalankannya pada login berikutnya, gunakan `sh ./install-macos.sh --sta
 
 ## Pengaturan wallpaper
 
-Video diputar tanpa audio dan berhenti saat jendela chat tersembunyi. Impor membatasi video menjadi maksimal **480 × 270**, **12 detik**, dan **60 FPS**. Untuk impor berikutnya, Anda dapat memilih batas `-MaxFps 30` atau `-MaxFps 120` di Windows. Di macOS gunakan `sh ./install-macos.sh --max-fps 30` atau `--max-fps 120`.
+File sumber hingga **4K** dan **300 MB** diproses secara lokal. Kit menyimpan versi WebM hingga **3840 × 2160**, **120 detik**, dan **60 FPS**. Video diputar tanpa audio dan dijeda saat jendela chat tersembunyi. Untuk impor berikutnya, Anda dapat memilih batas `-MaxFps 30` atau `-MaxFps 120` di Windows. Di macOS gunakan `sh ./install-macos.sh --max-fps 30` atau `--max-fps 120`.
 
 FPS aktual bergantung pada file dan perangkat. Refresh rate layar seperti 240 Hz tetap mengikuti pengaturan layar sistem.
 

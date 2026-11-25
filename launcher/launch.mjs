@@ -1,6 +1,6 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { watch } from 'node:fs';
-import { mkdir, readFile, writeFile, open, unlink } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, appendFile, open, stat, unlink } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -18,16 +18,93 @@ const folder = dirname(fileURLToPath(import.meta.url));
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
 const lock = join(kitFolder, 'instance.lock');
+const requestFile = join(kitFolder, 'launch.request');
 const prefix = '/__agy-wallpaper-local__/';
 const statusFile = join(kitFolder, 'status.json');
 const layoutFiles = ['wallpaper.css', 'renderer.js'];
 const readLayout = () => Promise.all(layoutFiles.map(file => readFile(join(folder, file), 'utf8')));
 let [style, renderer] = await readLayout();
 
+const log = (message) => {
+  const line = new Date().toISOString() + ' ' + message + '\n';
+  appendFile(join(kitFolder, 'launch.log'), line).catch(() => {});
+  if (process.env.AGY_WALLPAPER_DEBUG) process.stderr.write(line);
+};
+
 const alive = pid => {
   if (!Number.isSafeInteger(pid) || pid < 1) return false;
   try { process.kill(pid, 0); return true; } catch (error) { return error.code !== 'ESRCH'; }
 };
+
+const exists = path => stat(path).then(() => true, () => false);
+
+// PIDs are reused after a reboot, so a leftover instance.lock can point at an
+// unrelated process. Only treat the lock as live when the owner is really the
+// wallpaper supervisor.
+const isSupervisor = pid => new Promise(resolve => {
+  if (!alive(pid)) return resolve(false);
+  const script = [
+    `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"`,
+    "if ($p -and $p.Name -eq 'node.exe' -and $p.CommandLine -like '*launch.mjs*') { 'yes' } else { 'no' }",
+  ].join('\n');
+  execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: 10000 },
+    (error, stdout) => resolve(String(stdout || '').trim() === 'yes'));
+});
+
+const focusRunningApp = () => {
+  const focus = spawn(exe, [], { env, detached: true, stdio: 'ignore' });
+  focus.on('error', () => {});
+  focus.unref();
+};
+
+const requestLaunch = async () => {
+  await writeFile(requestFile, String(Date.now())).catch(() => {});
+  log('wrote launch request');
+};
+
+const killForeignInstances = () => new Promise(resolve => {
+  if (process.platform !== 'win32') return resolve(false);
+  const script = [
+    "$ErrorActionPreference='SilentlyContinue'",
+    "$procs = Get-CimInstance Win32_Process -Filter \"Name='Antigravity.exe'\" |",
+    "  Where-Object { $_.CommandLine -notmatch '--type=' -and $_.CommandLine -notmatch 'register_loader' }",
+    "if ($procs) { $procs | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }; Write-Output ('killed=' + ($procs.ProcessId -join ',')) } else { Write-Output 'killed=none' }",
+  ].join('\n');
+  execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: 15000 },
+    (error, stdout) => {
+      const text = String(stdout || '').trim();
+      log('foreign check: ' + (text || (error && error.message) || 'no output'));
+      resolve(text.includes('killed=') && !text.includes('killed=none'));
+    });
+});
+
+// Stay in the background after Antigravity closes. As soon as a new
+// Antigravity process appears (started from any shortcut or directly), stop
+// it and relaunch it with the CDP pipe so the wallpaper can attach.
+function watchForNextLaunch(exitAt) {
+  if (process.platform !== 'win32') return null;
+  const since = exitAt + 400;
+  const script = [
+    "$ErrorActionPreference='SilentlyContinue'",
+    '$since = [long]' + since,
+    'while ($true) {',
+    '  Start-Sleep -Milliseconds 600',
+    '  $procs = @(Get-Process -Name Antigravity -ErrorAction SilentlyContinue |',
+    '    Where-Object { try { ([DateTimeOffset]$_.StartTime).ToUnixTimeMilliseconds() -gt $since } catch { $false } })',
+    '  if ($procs.Count -gt 0) {',
+    "    $ids = ($procs | ForEach-Object { $_.Id }) -join ','",
+    '    $procs | Stop-Process -Force -ErrorAction SilentlyContinue',
+    "    Write-Output ('killed=' + $ids)",
+    '    break',
+    '  }',
+    '}',
+  ].join('\n');
+  const watcher = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  watcher.on('error', error => log('watcher error: ' + error.message));
+  return watcher;
+}
 
 async function lockInstance() {
   try {
@@ -41,7 +118,7 @@ async function lockInstance() {
       await delay(150);
       previous = await readFile(lock, 'utf8').catch(() => '');
     }
-    if (alive(Number(previous))) return false;
+    if (await isSupervisor(Number(previous))) return false;
     await unlink(lock).catch(() => {});
     return lockInstance();
   }
@@ -183,41 +260,71 @@ async function install(view) {
   if (result.exceptionDetails) throw new Error('Theme UI could not initialize');
 }
 
-async function update(view, message = '') {
-  await view.evaluate(`window.__agyWallpaper?.update(${JSON.stringify(currentThemes())},${JSON.stringify(message)})`);
+async function update(view, message = '', complete = true) {
+  await view.evaluate(`window.__agyWallpaper?.update(${JSON.stringify(currentThemes())},${JSON.stringify(message)},${complete})`);
+}
+
+async function importFromPicker(view) {
+  // Resolve the File captured by the trusted change event in the isolated world.
+  const { result } = await view.send('Runtime.evaluate', {
+    expression: 'window.__agyWallpaper?.takeUpload()',
+    contextId: view.context,
+  });
+  const objectId = result?.objectId;
+  if (!objectId) throw new Error('Pilih file wallpaper lagi.');
+  try {
+    const { path } = await view.send('DOM.getFileInfo', { objectId });
+    return path;
+  } finally {
+    await view.send('Runtime.releaseObject', { objectId }).catch(() => {});
+  }
 }
 
 async function main() {
   await mkdir(kitFolder, { recursive: true, mode: 0o700 });
   let ownsInstance = await lockInstance();
   if (!ownsInstance) {
-    let previousPid;
-    try { previousPid = JSON.parse(await readFile(statusFile, 'utf8')).pid; } catch {}
-    if (!alive(previousPid)) {
-      for (let attempt = 0; attempt < 16 && !ownsInstance; attempt++) {
-        await delay(150);
-        ownsInstance = await lockInstance();
-      }
+    let previous = {};
+    try { previous = JSON.parse(await readFile(statusFile, 'utf8')); } catch {}
+    const fresh = previous.checkedAt && Date.now() - Date.parse(previous.checkedAt) < 10000;
+    if (previous.status === 'ready' && fresh && alive(Number(previous.pid))) {
+      focusRunningApp();
+      return;
+    }
+    if (previous.status === 'waiting' && fresh) {
+      await requestLaunch();
+      return;
+    }
+    // The previous supervisor may be shutting down; give it time to release
+    // the lock before falling back to a launch request.
+    for (let attempt = 0; attempt < 20 && !ownsInstance; attempt++) {
+      await delay(150);
+      ownsInstance = await lockInstance();
+    }
+    if (!ownsInstance) {
+      await requestLaunch();
+      return;
     }
   }
-  if (!ownsInstance) {
-    const focus = spawn(exe, [], { env, detached: true, stdio: 'ignore' });
-    focus.on('error', () => {});
-    focus.unref();
-    return;
-  }
   let child;
-  let watcher;
+  let pipe;
+  let lastExitAt = 0;
+  let layoutWatcher;
+  let layoutChanged = false;
   const views = new Map();
   const probes = new Map();
-  try {
-    await loadThemes();
+  const spawnChild = () => {
+    views.clear();
+    probes.clear();
     child = spawn(exe, ['--remote-debugging-pipe'], {
       env, windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'],
     });
-    child.on('error', () => {});
-    const pipe = new Pipe(child.stdio[3], child.stdio[4]);
-    await report({ status: 'starting', pid: child.pid });
+    child.on('error', error => log('spawn error: ' + error.message));
+    child.on('exit', (code, signal) => {
+      lastExitAt = Date.now();
+      log('antigravity exited code=' + code + ' signal=' + signal);
+    });
+    pipe = new Pipe(child.stdio[3], child.stdio[4]);
     pipe.on('notice', event => {
       const view = views.get(event.sessionId);
       if (event.method === 'Target.detachedFromTarget') views.delete(event.params.sessionId);
@@ -234,74 +341,122 @@ async function main() {
           event.params.executionContextId === view.context && currentThemes()) {
         void (async () => {
           try {
-            await changeTheme(JSON.parse(event.params.payload));
-            await Promise.allSettled([...views.values()].map(item => update(item)));
+            const command = JSON.parse(event.params.payload);
+            if (command.action === 'import') command.file = await importFromPicker(view);
+            await changeTheme(command);
+            await Promise.allSettled([...views.values()].map(item => update(item, '', item === view)));
           } catch (error) {
             await update(view, error.message?.length < 180 ? error.message : 'Tema tidak bisa disimpan.');
           }
         })().catch(() => {});
       }
     });
+    log('spawned antigravity pid=' + child.pid);
+    return child;
+  };
 
-    let layoutChanged = false;
-    watcher = watch(folder, { persistent: false }, (_event, file) => {
+  try {
+    await loadThemes();
+    layoutWatcher = watch(folder, { persistent: false }, (_event, file) => {
       if (layoutFiles.includes(file)) layoutChanged = true;
     });
-    watcher.on('error', () => {});
-    let rounds = 0;
-    while (!pipe.closed && child.exitCode === null) {
-      try {
-        if (layoutChanged) {
-          layoutChanged = false;
-          [style, renderer] = await readLayout();
-          await Promise.allSettled([...views.values()].map(async view => {
-            await view.send('CSS.setStyleSheetText', { styleSheetId: view.styleSheetId, text: style });
-            await view.evaluate('window.__agyWallpaper?.dispose()');
-            await install(view);
-          }));
-        }
-        const { targetInfos } = await pipe.command('Target.getTargets');
-        for (const info of targetInfos) {
-          const origin = loopbackOrigin(info.url);
-          if (!origin || !['page', 'webview', 'other'].includes(info.type) ||
-              [...views.values()].some(view => view.target === info.targetId) ||
-              (probes.get(info.targetId) ?? 0) > Date.now()) continue;
-          probes.set(info.targetId, Date.now() + 5000);
-          const view = await setup(pipe, info, origin).catch(() => null);
-          if (!view) continue;
-          views.set(view.sessionId, view);
-          try { await install(view); }
-          catch {
-            views.delete(view.sessionId);
-            await pipe.command('Target.detachFromTarget', { sessionId: view.sessionId }).catch(() => {});
+    layoutWatcher.on('error', () => {});
+    await killForeignInstances();
+    await unlink(requestFile).catch(() => {});
+
+    while (true) {
+      spawnChild();
+      await report({ status: 'starting', pid: child.pid });
+      let rounds = 0;
+      while (true) {
+        try {
+          if (child.exitCode !== null) break;
+          if (layoutChanged) {
+            layoutChanged = false;
+            [style, renderer] = await readLayout();
+            await Promise.allSettled([...views.values()].map(async view => {
+              await view.send('CSS.setStyleSheetText', { styleSheetId: view.styleSheetId, text: style });
+              await view.evaluate('window.__agyWallpaper?.dispose()');
+              await install(view);
+            }));
+          }
+          const { targetInfos } = await pipe.command('Target.getTargets');
+          for (const info of targetInfos) {
+            const origin = loopbackOrigin(info.url);
+            if (!origin || !['page', 'webview', 'other'].includes(info.type) ||
+                [...views.values()].some(view => view.target === info.targetId) ||
+                (probes.get(info.targetId) ?? 0) > Date.now()) continue;
+            probes.set(info.targetId, Date.now() + 5000);
+            const view = await setup(pipe, info, origin).catch(() => null);
+            if (!view) continue;
+            views.set(view.sessionId, view);
+            try { await install(view); }
+            catch {
+              views.delete(view.sessionId);
+              await pipe.command('Target.detachFromTarget', { sessionId: view.sessionId }).catch(() => {});
+            }
+          }
+          await refreshTps([...views.values()]);
+          if (rounds++ % 4 === 0) {
+            let metrics = null;
+            for (const view of views.values()) {
+              const result = await view.evaluate('window.__agyWallpaper?.report()').catch(() => null);
+              const current = result?.result?.value;
+              if (current && (!metrics || current.playing)) metrics = current;
+            }
+            await report({ status: metrics ? 'ready' : 'waiting-for-hub', pid: child.pid, views: views.size, metrics });
+          }
+        } catch (error) {
+          log('loop error: ' + (error && error.message || error));
+          if (child.exitCode !== null) break;
+          if (pipe.closed) {
+            log('pipe closed while app is alive; restarting it');
+            child.kill();
+            await delay(1200);
+            break;
           }
         }
-        await refreshTps([...views.values()]);
-        if (rounds++ % 4 === 0) {
-          let metrics = null;
-          for (const view of views.values()) {
-            const result = await view.evaluate('window.__agyWallpaper?.report()').catch(() => null);
-            const current = result?.result?.value;
-            if (current && (!metrics || current.playing)) metrics = current;
-          }
-          await report({ status: metrics ? 'ready' : 'waiting-for-hub', pid: child.pid, views: views.size, metrics });
-        }
-      } catch {
-        if (pipe.closed) break;
+        await delay(1000);
       }
-      await delay(1000);
+
+      const exitAt = lastExitAt || Date.now();
+      log('antigravity closed at ' + new Date(exitAt).toISOString() + ', waiting for next launch');
+      await report({ status: 'waiting', pid: null });
+      const watcher = watchForNextLaunch(exitAt);
+      let killedByWatcher = false;
+      watcher?.stdout.on('data', data => {
+        const text = String(data).trim();
+        if (text) { log('watcher ' + text); killedByWatcher = true; }
+      });
+      let lastReport = Date.now();
+      try {
+        while (!killedByWatcher) {
+          if (await exists(requestFile)) {
+            await unlink(requestFile).catch(() => {});
+            log('launch request received');
+            break;
+          }
+          if (Date.now() - lastReport > 4000) {
+            lastReport = Date.now();
+            await report({ status: 'waiting', pid: null });
+          }
+          await delay(400);
+        }
+      } finally {
+        watcher?.kill();
+      }
+      await delay(killedByWatcher ? 1500 : 900);
     }
-    await report({ status: 'closed' });
   } finally {
-    watcher?.close();
+    layoutWatcher?.close();
     await closeTps();
     await unlink(lock).catch(() => {});
+    await unlink(requestFile).catch(() => {});
   }
 }
 
-main().catch(async () => {
+main().catch(async error => {
+  log('fatal: ' + (error && error.stack || error));
   await report({ status: 'error' });
-  const original = spawn(exe, [], { env, detached: true, stdio: 'ignore' });
-  original.on('error', () => {});
-  original.unref();
+  focusRunningApp();
 });

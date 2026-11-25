@@ -5,7 +5,7 @@
 }
 
 .aw-clear { background-color: transparent !important; }
-.aw-wallpaper-active .bg-sidebar { background-color: #070709 !important; }
+.aw-wallpaper-active .bg-sidebar { background-color: #000 !important; }
 
 #agy-wallpaper-layer {
   position: absolute;
@@ -21,7 +21,17 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.32;
+  opacity: 1;
+}
+
+.aw-pane:has(> #agy-wallpaper-layer:not([hidden])) .aw-clear {
+  text-shadow: 0 1px 2px #000d;
+}
+
+/* The native scroll fade ends at the composer and leaves a dark seam. */
+.aw-pane:has(> #agy-wallpaper-layer:not([hidden]))
+  .relative.self-stretch.flex-grow > .absolute.bottom-0.z-10.pointer-events-none.left-4 {
+  background-image: none !important;
 }
 
 #agy-wallpaper-layer[hidden] { display: none !important; }

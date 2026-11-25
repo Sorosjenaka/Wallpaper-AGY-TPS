@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, writeFile, rename, rm } from 'node:fs/promises';
-import { extname, join, parse } from 'node:path';
+import { createWriteStream } from 'node:fs';
+import { mkdir, open, readFile, writeFile, rename, rm } from 'node:fs/promises';
+import { extname, isAbsolute, join, parse } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import { kitFolder, readSettings } from './paths.mjs';
 
 const folder = join(kitFolder, 'themes');
-export const uploadLimit = 16 * 1024 * 1024;
+export const uploadLimit = 300_000_000;
 const stateFile = join(folder, 'themes.json');
 const settings = readSettings();
 const requestedFps = String(process.env.AGY_WALLPAPER_MAX_FPS || settings.maxFps || 60);
@@ -55,7 +57,7 @@ export function changeTheme(command) {
   return run;
 }
 
-async function update({ action, id, name, data }) {
+async function update({ action, id, file }) {
   switch (action) {
     case 'select':
       if (id !== null && !mediaPath(id)) throw new Error('Tema tidak ditemukan.');
@@ -72,7 +74,7 @@ async function update({ action, id, name, data }) {
       break;
     }
     case 'import':
-      await importTheme(name, data);
+      await importTheme(file);
       break;
     default:
       throw new Error('Aksi tema tidak dikenal.');
@@ -80,24 +82,20 @@ async function update({ action, id, name, data }) {
   return state;
 }
 
-async function importTheme(name, encoded) {
-  if (typeof name !== 'string' || typeof encoded !== 'string' || encoded.length > Math.ceil(uploadLimit / 3) * 4) {
-    throw new Error('Pilih GIF, MP4, atau WebM maksimal 16 MB.');
-  }
-  const mediaType = mediaTypes[extname(name).toLowerCase()];
-  const bytes = Buffer.from(encoded, 'base64');
-  if (!mediaType || bytes.length > uploadLimit || !mediaType[1](bytes)) {
-    throw new Error('File harus berupa GIF, MP4, atau WebM yang valid.');
-  }
+async function importTheme(file) {
+  if (typeof file !== 'string' || !isAbsolute(file)) throw new Error('Pilih file wallpaper lagi.');
+  const mediaType = mediaTypes[extname(file).toLowerCase()];
+  if (!mediaType) throw new Error('Pilih GIF, MP4, atau WebM.');
+  const [format, validHeader] = mediaType;
 
   const id = randomUUID();
   const original = join(folder, `${id}.input`);
   const output = join(folder, `${id}.webm`);
   let saved = false;
   try {
-    await writeFile(original, bytes, { flag: 'wx' });
-    await transcode(original, output, mediaType[0]);
-    const label = parse(name).name.trim().slice(0, 64) || 'Tema baru';
+    await stageUpload(file, original, validHeader);
+    await transcode(original, output, format);
+    const label = parse(file).name.trim().slice(0, 64) || 'Tema baru';
     await saveThemes({ themes: [...state.themes, { id, name: label }], active: id });
     saved = true;
   } finally {
@@ -106,20 +104,43 @@ async function importTheme(name, encoded) {
   }
 }
 
+async function stageUpload(file, destination, validHeader) {
+  const source = await open(file, 'r').catch(() => null);
+  if (!source) throw new Error('File wallpaper tidak bisa dibuka.');
+  try {
+    const info = await source.stat();
+    const { size } = info;
+    if (size > uploadLimit) throw new Error(`Ukuran file melebihi ${uploadLimit / 1_000_000} MB.`);
+    if (!info.isFile() || size === 0) throw new Error('File wallpaper kosong atau tidak bisa dibaca.');
+    const header = Buffer.alloc(8);
+    const { bytesRead } = await source.read(header, 0, header.length, 0);
+    if (!validHeader(header.subarray(0, bytesRead))) {
+      throw new Error('File harus berupa GIF, MP4, atau WebM yang valid.');
+    }
+    // Bound the copy even if the original grows during import.
+    await pipeline(
+      source.createReadStream({ start: 0, end: size - 1, autoClose: false }),
+      createWriteStream(destination, { flags: 'wx', mode: 0o600 }),
+    );
+  } finally {
+    await source.close();
+  }
+}
+
 function transcode(input, output, format) {
   return new Promise((resolve, reject) => {
     const args = [
-      '-v', 'error', '-nostdin', '-protocol_whitelist', 'file,pipe',
-      '-f', format, '-threads', '2', '-max_pixels', '16000000', '-i', input,
-      '-t', '12', '-map', '0:v:0', '-an', '-sn', '-dn', '-map_metadata', '-1',
-      '-vf', 'scale=w=min(480\\,iw):h=min(270\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1',
+      '-v', 'error', '-nostdin', '-filter_threads', '2', '-protocol_whitelist', 'file,pipe',
+      '-f', format, '-threads', '2', '-max_pixels', '64000000', '-i', input,
+      '-t', '120', '-map', '0:v:0', '-an', '-sn', '-dn', '-map_metadata', '-1',
+      '-vf', 'scale=w=min(3840\\,iw):h=min(2160\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1',
       '-fpsmax', fpsLimit,
       '-c:v', 'libvpx-vp9', '-pix_fmt', 'yuv420p', '-b:v', '0', '-crf', '33',
       '-deadline', 'realtime', '-cpu-used', '6', '-threads', '2', output,
     ];
     const ffmpeg = process.env.AGY_FFMPEG_PATH || settings.ffmpegPath || 'ffmpeg';
     const child = spawn(ffmpeg, args, { windowsHide: true, stdio: 'ignore' });
-    const timeout = setTimeout(() => child.kill(), 45_000);
+    const timeout = setTimeout(() => child.kill(), 5 * 60_000);
     const failed = () => reject(new Error('Antigravity tidak bisa menyiapkan animasi dari file ini.'));
     child.once('error', () => { clearTimeout(timeout); failed(); });
     child.once('exit', code => {

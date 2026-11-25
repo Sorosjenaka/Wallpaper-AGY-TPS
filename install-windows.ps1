@@ -11,6 +11,8 @@ $package = Join-Path $env:LOCALAPPDATA 'Wallpaper-AGY-TPS'
 $launcher = Join-Path $package 'Antigravity Kit.exe'
 $menuLink = Join-Path ([Environment]::GetFolderPath('Programs')) 'Antigravity Kit.lnk'
 $startupLink = Join-Path ([Environment]::GetFolderPath('Startup')) 'Antigravity Kit.lnk'
+$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$runName = 'AntigravityKit'
 $node = (Get-Command node.exe).Source
 $setup = Join-Path $PSScriptRoot 'scripts\setup.mjs'
 
@@ -20,6 +22,7 @@ if ($Uninstall) {
     foreach ($path in $menuLink, $startupLink, $launcher, (Join-Path $package 'node-path.txt')) {
         if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
     }
+    Remove-ItemProperty -Path $runKey -Name $runName -ErrorAction SilentlyContinue
     return
 }
 
@@ -49,5 +52,11 @@ function Save-KitShortcut([string]$Path) {
     $shortcut.Save()
 }
 Save-KitShortcut $menuLink
-if ($StartAtLogin) { Save-KitShortcut $startupLink }
+if ($StartAtLogin) {
+    Save-KitShortcut $startupLink
+    # Antigravity can rewrite its own Start Menu shortcut, so keep a second
+    # autostart entry in the registry as well.
+    New-Item -Path $runKey -Force | Out-Null
+    Set-ItemProperty -Path $runKey -Name $runName -Value ('"' + $launcher + '"') -Type String
+}
 Write-Host 'Buka Antigravity Kit dari Start Menu.'

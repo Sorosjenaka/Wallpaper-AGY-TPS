@@ -5,11 +5,13 @@
   }
   let state = initial;
   let pending = false;
+  let selectedUpload = null;
   let deleteId = null;
   let dock;
   let sidebarDock;
   let surface;
   let transparentChat;
+  let clearNodes = [];
   let hasSurface = false;
   let current;
   let composer;
@@ -40,7 +42,8 @@
   const dialog = make('dialog', { 'aria-labelledby': 'agy-wallpaper-title' });
   const title = make('h2', { id: 'agy-wallpaper-title' }, 'Tema wallpaper');
   const list = make('ul', { class: 'aw-list' });
-  const hint = make('p', { class: 'aw-hint' }, 'GIF, MP4, atau WebM hingga 16 MB.');
+  const maxSize = `${uploadLimit / 1_000_000} MB`;
+  const hint = make('p', { class: 'aw-hint' }, `GIF, MP4, atau WebM hingga ${maxSize}.`);
   const status = make('p', { class: 'aw-status', role: 'status' });
   const picker = make('input', { type: 'file', accept: '.gif,.mp4,.webm', hidden: '' });
   const open = button('Tema', () => {
@@ -80,26 +83,17 @@
     window.agyWallpaperCommand(JSON.stringify(command));
   }
 
-  picker.addEventListener('change', async event => {
+  picker.addEventListener('change', event => {
     if (!event.isTrusted) return;
     const file = picker.files[0];
     picker.value = '';
     if (!file || pending) return;
-    if (file.size > uploadLimit) { status.textContent = 'Ukuran file melebihi 16 MB.'; return; }
-    pending = true;
-    status.textContent = 'Membaca file…';
-    renderList();
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const pieces = [];
-      for (let index = 0; index < bytes.length; index += 32768) {
-        pieces.push(String.fromCharCode(...bytes.subarray(index, index + 32768)));
-      }
-      pending = false;
-      send({ action: 'import', name: file.name, data: btoa(pieces.join('')) });
-    } catch {
-      update(state, 'File tidak bisa dibaca.');
+    if (file.size > uploadLimit) {
+      status.textContent = `Ukuran file melebihi ${maxSize}.`;
+      return;
     }
+    selectedUpload = file;
+    send({ action: 'import' });
   });
 
   function renderList() {
@@ -188,9 +182,13 @@
       }
     }
     if (chat !== transparentChat) {
-      transparentChat?.classList.remove('aw-clear');
+      for (const node of clearNodes) node.classList.remove('aw-clear');
       transparentChat = chat;
-      transparentChat?.classList.add('aw-clear');
+      clearNodes = [];
+      for (let node = chat; node && node !== surface && node !== document.body; node = node.parentElement) {
+        node.classList.add('aw-clear');
+        clearNodes.push(node);
+      }
     }
     const active = Boolean(surface);
     document.body.classList.toggle('aw-wallpaper-active', active);
@@ -219,15 +217,19 @@
   }
 
   function playWhenVisible() {
-    if (!current || !hasSurface || document.hidden) video.pause();
-    else video.play().catch(() => {});
+    if (!current || !hasSurface || document.hidden) { video.pause(); return; }
+    if (video.readyState === 0) video.load();
+    video.play().catch(() => {});
   }
 
-  function update(next, message = '') {
+  function update(next, message = '', complete = true) {
     state = next;
-    pending = false;
-    deleteId = null;
-    status.textContent = message;
+    if (complete) {
+      pending = false;
+      selectedUpload = null;
+      deleteId = null;
+      status.textContent = message;
+    }
     renderList();
     locateDock();
     refreshSurfaces();
@@ -235,6 +237,7 @@
       current = state.active;
       if (current) {
         video.src = mediaPrefix + current + '.webm';
+        video.load();
       } else {
         video.removeAttribute('src');
         video.load();
@@ -248,15 +251,27 @@
     if (document.hidden) return;
     locateDock();
     refreshSurfaces();
+    playWhenVisible();
   }, 1200);
   window.__agyWallpaper = {
     update,
+    takeUpload: () => {
+      const file = selectedUpload;
+      selectedUpload = null;
+      return file;
+    },
     conversationTitle,
     showTps,
     report: () => ({
       active: current,
       attached: hasSurface,
-      coversChat: hasSurface && layer.offsetHeight >= surface.clientHeight - 1,
+      surfaceFound: Boolean(surface),
+      layerRect: (() => { const r = layer.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; })(),
+      videoLoaded: video.readyState,
+      videoPaused: video.paused,
+      videoDuration: video.duration,
+      videoError: video.error && video.error.code,
+      coversChat: hasSurface && surface ? layer.offsetHeight >= surface.clientHeight - 1 : false,
       docked: !controls.hidden && controls.parentElement === sidebarDock,
       minimized: !dialog.open,
       visible: !document.hidden,
@@ -278,7 +293,7 @@
       dock?.classList.remove('aw-settings-for-theme');
       sidebarDock?.classList.remove('aw-theme-sidebar');
       surface?.classList.remove('aw-pane');
-      transparentChat?.classList.remove('aw-clear');
+      for (const node of clearNodes) node.classList.remove('aw-clear');
       document.body.classList.remove('aw-wallpaper-active');
       delete window.__agyWallpaper;
     },

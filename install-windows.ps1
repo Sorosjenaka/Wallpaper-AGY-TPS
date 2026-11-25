@@ -4,6 +4,8 @@ param(
     [switch]$Uninstall,
     [switch]$WithPrism,
     [switch]$WithoutPrism,
+    [switch]$AutoCompact,
+    [switch]$NoAutoCompact,
     [ValidateSet(30, 60, 120)][int]$MaxFps,
     [string]$AntigravityPath
 )
@@ -40,6 +42,8 @@ if ($AntigravityPath) { $setupArgs += @('--app-path', $AntigravityPath) }
 if ($MaxFps) { $setupArgs += @('--max-fps', [string]$MaxFps) }
 if ($WithPrism) { $setupArgs += '--with-prism' }
 if ($WithoutPrism) { $setupArgs += '--without-prism' }
+if ($AutoCompact) { $setupArgs += '--auto-compact' }
+if ($NoAutoCompact) { $setupArgs += '--no-auto-compact' }
 & $node $setup @setupArgs
 if ($LASTEXITCODE -ne 0) { throw 'Instalasi paket gagal.' }
 

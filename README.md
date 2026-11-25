@@ -65,6 +65,20 @@ Mode Kit menyembunyikan notifikasi otomatis **Memory & Conversation DB Guard**. 
 
 Untuk kembali ke mode TPS Kit, jalankan installer dengan `-WithoutPrism` di Windows atau `--without-prism` di macOS. Instalasi Prism dan pengaturannya tetap tersimpan agar bisa diaktifkan lagi. Kredit, versi sumber, dan lisensi patch ada di [dokumen Prism](prism/README.md).
 
+### Auto-compact saat konteks mencapai 90%
+
+Opsi ini menjalankan perintah asli `/compact` pada percakapan yang terbuka dan terlihat. Kit menunggu giliran agent selesai dan kolom chat kosong. Setelah satu pengiriman, percakapan dapat diproses lagi setelah penggunaan konteks turun ke 80% atau lebih rendah. Jika metrik Prism tidak tersedia, AGY tetap bisa menangani kompaksi bawaannya. Riwayat percakapan tetap bisa dibuka. [Dokumentasi `/compact`](https://antigravity.google/docs/commands/compact)
+
+```powershell
+powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\install-windows.ps1 -WithPrism -AutoCompact
+```
+
+```sh
+sh ./install-macos.sh --with-prism --auto-compact
+```
+
+Untuk mematikan fitur ini, jalankan installer dengan `-NoAutoCompact` di Windows atau `--no-auto-compact` di macOS, lalu buka ulang **Antigravity Kit**.
+
 ## Pengaturan wallpaper
 
 File sumber hingga **4K** dan **300 MB** diproses secara lokal. Kit menyimpan versi WebM hingga **3840 × 2160**, **120 detik**, dan **60 FPS**. Video diputar tanpa audio dan dijeda saat jendela chat tersembunyi. Untuk impor berikutnya, Anda dapat memilih batas `-MaxFps 30` atau `-MaxFps 120` di Windows. Di macOS gunakan `sh ./install-macos.sh --max-fps 30` atau `--max-fps 120`.

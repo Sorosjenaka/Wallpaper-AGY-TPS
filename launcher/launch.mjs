@@ -15,7 +15,9 @@ if (!exe) {
   process.exit(1);
 }
 const folder = dirname(fileURLToPath(import.meta.url));
-const usePrism = readSettings().prism === true;
+const settings = readSettings();
+const usePrism = settings.prism === true;
+const useAutoCompact = usePrism && settings.autoCompact === true;
 const profileRoot = process.platform === 'darwin'
   ? join(home, 'Library', 'Application Support')
   : process.env.APPDATA || join(home, 'AppData', 'Roaming');
@@ -25,9 +27,9 @@ const lock = join(kitFolder, 'instance.lock');
 const requestFile = join(kitFolder, 'launch.request');
 const prefix = '/__agy-wallpaper-local__/';
 const statusFile = join(kitFolder, 'status.json');
-const layoutFiles = ['wallpaper.css', 'renderer.js'];
+const layoutFiles = ['wallpaper.css', 'renderer.js', 'auto-compact.js'];
 const readLayout = () => Promise.all(layoutFiles.map(file => readFile(join(folder, file), 'utf8')));
-let [style, renderer] = await readLayout();
+let [style, renderer, autoCompact] = await readLayout();
 
 const log = (message) => {
   const line = new Date().toISOString() + ' ' + message + '\n';
@@ -304,6 +306,10 @@ async function install(view) {
     `${renderer.trim()}(${JSON.stringify(currentThemes())},${JSON.stringify(prefix)},${uploadLimit})`,
   );
   if (result.exceptionDetails) throw new Error('Theme UI could not initialize');
+  if (useAutoCompact) {
+    const compact = await view.evaluate(`${autoCompact.trim()}()`);
+    if (compact.exceptionDetails) log('auto-compact could not initialize');
+  }
 }
 
 async function update(view, message = '', complete = true) {
@@ -433,10 +439,10 @@ async function main() {
           }
           if (layoutChanged) {
             layoutChanged = false;
-            [style, renderer] = await readLayout();
+            [style, renderer, autoCompact] = await readLayout();
             await Promise.allSettled([...views.values()].map(async view => {
               await view.send('CSS.setStyleSheetText', { styleSheetId: view.styleSheetId, text: style });
-              await view.evaluate('window.__agyWallpaper?.dispose()');
+              await view.evaluate('window.__agyAutoCompact?.dispose(); window.__agyWallpaper?.dispose()');
               await install(view);
             }));
           }

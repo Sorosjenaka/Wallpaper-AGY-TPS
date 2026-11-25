@@ -19,6 +19,7 @@ const { positionals: [action], values } = parseArgs({
   options: {
     'app-path': { type: 'string' }, 'ffmpeg-path': { type: 'string' }, 'max-fps': { type: 'string' },
     'with-prism': { type: 'boolean' }, 'without-prism': { type: 'boolean' },
+    'auto-compact': { type: 'boolean' }, 'no-auto-compact': { type: 'boolean' },
   },
 });
 
@@ -114,7 +115,7 @@ async function main() {
     await setSidecarEnabled(config, false);
     if (manifest) await rm(pluginPath, { recursive: true, force: true });
     const runtime = join(kitFolder, 'launcher');
-    for (const name of ['launch.mjs', 'paths.mjs', 'renderer.js', 'themes.mjs', 'tps.mjs', 'wallpaper.css']) {
+    for (const name of ['launch.mjs', 'paths.mjs', 'renderer.js', 'themes.mjs', 'tps.mjs', 'wallpaper.css', 'auto-compact.js']) {
       await rm(join(runtime, name), { force: true });
     }
     console.log('Plugin dilepas. Wallpaper dan pengaturan lokal tetap tersimpan.');
@@ -127,6 +128,11 @@ async function main() {
   const previous = readSettings();
   if (values['with-prism'] && values['without-prism']) throw new Error('Pilih satu mode Prism.');
   const prism = !values['without-prism'] && (values['with-prism'] || previous.prism === true);
+  if (values['auto-compact'] && (!prism || values['no-auto-compact'])) {
+    throw new Error('Auto-compact perlu mode Prism dan satu pilihan auto-compact.');
+  }
+  const autoCompact = Boolean(prism && !values['no-auto-compact'] &&
+    (values['auto-compact'] || previous.autoCompact === true));
   const appPath = values['app-path'] ? resolve(values['app-path']) : previous.appPath;
   const maxFps = Number(values['max-fps'] || previous.maxFps || 60);
   if (![30, 60, 120].includes(maxFps)) throw new Error('Batas FPS harus 30, 60, atau 120.');
@@ -162,7 +168,7 @@ async function main() {
   await mkdir(dirname(pluginPath), { recursive: true, mode: 0o700 });
   await cp(join(repo, 'launcher'), join(kitFolder, 'launcher'), { recursive: true });
   await cp(join(repo, 'plugin'), pluginPath, { recursive: true });
-  await writeJson(settingsPath, { appPath, ffmpegPath, maxFps, prism });
+  await writeJson(settingsPath, { appPath, ffmpegPath, maxFps, prism, autoCompact });
   await writeFile(join(kitFolder, 'node-path.txt'), process.execPath + '\n', dataMode);
   await setSidecarEnabled(activeConfig, true);
   console.log(prism ? 'Launcher, Prism, dan patch slider siap.' : 'Launcher dan plugin TPS siap.');

@@ -166,6 +166,9 @@
         meter.remove();
       }
     }
+    meter.hidden = Boolean(composer?.querySelector(
+      ':is(#ag-prism-pulse-bar, #ag-pulse-status-bar, [data-ag-prism-pulse-bar]):not([hidden], [data-layout="blocked"], [data-ag-prism-hidden="1"])',
+    ));
     if (shownTitle !== conversationTitle()) showTps(conversationTitle(), null);
     let chat = composer?.parentElement;
     while (chat && chat !== document.body && chat.offsetHeight < innerHeight * 0.55) chat = chat.parentElement;
@@ -200,7 +203,7 @@
   }
 
   function conversationTitle() {
-    return !document.hidden && composer?.isConnected ? document.title.trim() : null;
+    return !document.hidden && !meter.hidden && composer?.isConnected ? document.title.trim() : null;
   }
 
   function showTps(title, value) {

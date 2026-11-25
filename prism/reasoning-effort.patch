@@ -1,0 +1,301 @@
+diff --git a/sidecars/daemon/main.mjs b/sidecars/daemon/main.mjs
+index 774d7f3c9cdb40358f5a20fde25ec7709525fdba..7c8da97a070eda9746f60c6c712b9e04456b71e0 100644
+--- a/sidecars/daemon/main.mjs
++++ b/sidecars/daemon/main.mjs
+@@ -1,3 +1,4 @@
++// Modified by 0XSoros on 2026-11-26 for the Wallpaper-AGY-TPS integration.
+ // Obsidian Prism Native Sidecar Daemon (sidecars/daemon/main.mjs)
+ // - Auto-discovers DevToolsActivePort across Windows/macOS/Linux + fast Target.setDiscoverTargets push
+ // - Registers Page.addScriptToEvaluateOnNewDocument + Runtime.evaluate (survives Ctrl+Shift+R reloads with zero app.asar touch!)
+@@ -2164,7 +2165,7 @@ export class PrismDaemon {
+     this._storageHealthCache = null;
+     this._storageHealthAt = 0;
+     this._storageGuardStateFile = resolveStorageGuardStatePath(storageGuardStatePath);
+-    this._enableStorageGuardTimer = enableStorageGuardTimer !== false;
++    this._enableStorageGuardTimer = enableStorageGuardTimer !== false && !fs.existsSync(path.join(this.rootDir, '.kit-hide-storage-popup'));
+     const sgInit = Number(storageGuardInitialDelayMs);
+     this._storageGuardInitialDelayMs = Number.isFinite(sgInit) ? Math.max(0, sgInit) : 35000;
+     const sgInt = Number(storageGuardIntervalMs);
+diff --git a/test/v107-beta3-slider-slash.test.mjs b/test/v107-beta3-slider-slash.test.mjs
+index cb700b890d819dc51f434cb5d15e12b7a80b3db6..ccd801bc668b3cbafd186cf0dcfde655a847d1d7 100644
+--- a/test/v107-beta3-slider-slash.test.mjs
++++ b/test/v107-beta3-slider-slash.test.mjs
+@@ -1,3 +1,4 @@
++// Modified by 0XSoros on 2026-11-26 for the Wallpaper-AGY-TPS integration.
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+ import fs from 'node:fs';
+@@ -540,7 +541,8 @@ test('3. upstream-client: drag caches trackRect (0 rect reads on move, invalidat
+   // Single rAF flush paints visual exactly once and uses compositor transform on knob
+   env.flushRafs(16.67);
+   const fillWritesAfterRaf = track._styleSets.filter((s) => s.k === '--ces-fill').length;
+-  assert.equal(fillWritesAfterRaf, 1, '25 coalesced pointermove events must produce exactly 1 --ces-fill write per frame');
++  assert.equal(fillWritesAfterRaf, 0, 'drag fill must avoid layout-affecting width writes');
++  assert.equal(track.querySelector('.ces-fill').style.transform, 'scaleX(0.93636)', 'drag fill must reach the pointer on the compositor');
+   assert.match(knob.style.transform, /^translate3d\([\d.]+px,0,0\)$/, 'knob must use compositor translate3d during drag');
+   assert.equal(knob.style.left, '0px', 'knob must pin left:0px while translate3d is active');
+ 
+@@ -1064,6 +1066,7 @@ test('8. P2-1/P1-3/P1-5 regressions: drag translate3d uses trackEl.clientWidth u
+ 
+   // Pointer down & drag to visual right end (p = 1) -> translate3d must use layout clientWidth 220 -> 206.0px (NOT scaled 198.3px)
+   track.dispatchEvent({ type: 'pointerdown', button: 0, clientX: 10 + 14, pointerId: 1 });
++  track.dispatchEvent({ type: 'lostpointercapture', pointerId: 1 });
+   track.dispatchEvent({ type: 'pointermove', buttons: 1, clientX: 10 + 212.3 - 14, pointerId: 1 });
+   env.flushRafs(16.67);
+   assert.equal(knob.style.transform, 'translate3d(206.0px,0,0)', 'translate3d must use unscaled trackEl.clientWidth under scale(.965)');
+diff --git a/vendor/effort-slider/upstream-client.js b/vendor/effort-slider/upstream-client.js
+index d8e1e06528356045ecb20b0f23bb07a42816e3bf..06db9c45b2ba48267952c01e1544be7b1edc5c85 100644
+--- a/vendor/effort-slider/upstream-client.js
++++ b/vendor/effort-slider/upstream-client.js
+@@ -1,3 +1,4 @@
++// Modified by 0XSoros on 2026-11-26 for the Wallpaper-AGY-TPS integration.
+ "use strict";
+ /**
+ * Antigravity Codex 风格推理等级滑条 (antigravity-codex-effort-slider)
+@@ -499,6 +500,13 @@ return mixHex(lo, hi, clamp01((idx - first) / Math.max(1, n - 1 - first)));
+ }
+ // ── 样式表注入（对齐 dsh-codex-effort-slider 右向左星尘横穿 + 星云扫光 + Antigravity 面板适配） ──
+ var SLIDER_CSS = "@keyframes ces-sweep{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}@keyframes ces-star-sweep{0%{transform:translate3d(0,0,0);opacity:0}6%,94%{opacity:1}100%{transform:translate3d(-100%,0,0);opacity:0}}.ces-inline,.ces-root,.ces-track,.ces-ag-section,.ces-ag-effort-row{box-sizing:border-box}.ces-inline,.ces-root,.ces-ag-section,.ces-ag-section *{user-select:none!important;-webkit-user-select:none!important;-webkit-tap-highlight-color:transparent!important}.ces-inline{width:100%;padding-top:6px}.ces-root{position:relative;width:100%;outline:none!important;box-shadow:none!important}.ces-track{position:relative;width:100%;height:28px;border-radius:999px;background:rgba(128,128,145,.18);box-shadow:inset 0 1px 2px rgba(0,0,0,.24),inset 0 0 0 1px rgba(255,255,255,.06);cursor:pointer;touch-action:none;transition:opacity .15s,box-shadow .2s}.ces-root[data-energy='1'] .ces-track{box-shadow:0 0 calc(var(--ces-energy,0) * 16px) rgba(168,85,247,.5),inset 0 1px 2px rgba(0,0,0,.24)}.ces-root[data-energy='0'] .ces-star,.ces-root[data-energy='0'] .ces-energy__sweep{animation-play-state:paused}.ces-track.is-locked{opacity:.45;cursor:not-allowed;filter:saturate(.25)}.ces-fill,.ces-energy,.ces-stars{position:absolute;top:0;left:0;bottom:0;width:var(--ces-fill,14px);border-radius:14px 0 0 14px;pointer-events:none}.ces-fill{background:var(--ces-fill-bg,#4d93f8);overflow:hidden}.ces-energy{overflow:hidden;opacity:var(--ces-energy,0);transition:opacity .2s;background:linear-gradient(90deg,#3b1178,#6d28d9 30%,#9333ea 62%,#c084fc)}.ces-energy__sweep{position:absolute;inset:0;background:linear-gradient(100deg,transparent 18%,rgba(255,255,255,.3) 50%,transparent 82%);transform:translateX(100%);animation:ces-sweep 2.4s linear infinite;pointer-events:none}.ces-stars{opacity:var(--ces-star-opacity,0);transition:opacity .2s;overflow:hidden}.ces-star{position:absolute;left:0;right:0;height:3px;margin-top:-1.5px;pointer-events:none;animation:ces-star-sweep linear infinite}.ces-star__dot{position:absolute;left:100%;top:0;width:3px;height:3px;margin-left:-1.5px;border-radius:50%;background:#f5f3ff;box-shadow:0 0 5px rgba(216,180,254,.95);opacity:var(--ces-b,1);transform:scale(var(--ces-b,1))}.ces-ticks{position:absolute;inset:0;pointer-events:none}.ces-tick{position:absolute;top:50%;width:3px;height:3px;margin:-1.5px 0 0 -1.5px;border-radius:50%;background:rgba(255,255,255,.28);pointer-events:none;transition:background-color .12s}.ces-tick.is-on{background:rgba(255,255,255,.65)}.ces-tick.is-dim{background:rgba(255,255,255,.28)}.ces-knob{position:absolute;top:50%;left:var(--ces-fill,14px);width:28px;height:28px;margin:-14px 0 0 -14px;border-radius:50%;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.34),0 0 0 .5px rgba(0,0,0,.06);pointer-events:none;will-change:transform}.ces-root[data-theme='claude'] .ces-stars,.ces-root[data-theme='claude'] .ces-energy{display:none!important}.ces-root[data-theme='claude'] .ces-track{background:rgba(128,128,145,.16);box-shadow:inset 0 1px 2px rgba(0,0,0,.22),inset 0 0 0 1px rgba(255,255,255,.08)}.ces-root[data-theme='claude'][data-energy='1'] .ces-track{box-shadow:0 0 16px rgba(167,139,250,.45),inset 0 1px 2px rgba(0,0,0,.22)}.ces-root[data-theme='claude'] .ces-knob{width:24px;height:30px;margin:-15px 0 0 -12px;border-radius:7px;box-shadow:0 2px 6px rgba(0,0,0,.4),0 0 0 .5px rgba(0,0,0,.12);display:flex;align-items:center;justify-content:center}.ces-knob-notch{display:none;width:2px;height:10px;border-radius:999px;background:rgba(0,0,0,.28)}.ces-root[data-theme='claude'] .ces-knob-notch{display:block}.ces-claude-canvas{position:absolute;left:0;top:0;border-radius:14px 0 0 14px;display:none;pointer-events:none}.ces-root[data-theme='claude'][data-energy='1'] .ces-claude-canvas{display:block}@keyframes ces-claude-rise{0%{transform:translateY(20%) scale(.98);opacity:.15}60%{opacity:1}85%{transform:translateY(-2%) scale(1.01)}100%{transform:none;opacity:1}}.ces-ag-effort-value:is(.is-claude-changing,.ces-text-rise){animation:ces-claude-rise .24s cubic-bezier(.2,.85,.25,1)}.ces-ag-effort-value.is-glowing:is(.is-claude-changing,.ces-text-rise){animation:ces-claude-rise .24s cubic-bezier(.2,.85,.25,1),ces-text-bloom .4s cubic-bezier(.16,1,.3,1) forwards}[data-testid='model-selector-panel'].ces-ag-panel-enhanced{max-height:26rem!important}.ces-ag-section,.ces-ag-section *{outline:none!important}.ces-ag-section,.ces-ag-effort-row{display:flex;flex-direction:column;width:100%}.ces-ag-section{flex-shrink:0}.ces-ag-effort-row{padding:6px 8px 8px;border-radius:6px;transition:box-shadow .2s,background-color .2s}.ces-ag-effort-row:hover{background:rgba(128,128,145,.08)}.ces-ag-effort-row[data-ces-max='true'],[data-ces-effort-row='true'][data-ces-max='true']{box-shadow:inset 0 0 0 1px rgba(139,92,246,.42),0 0 14px -4px rgba(139,92,246,.45)!important;background:rgba(139,92,246,.06)}.ces-ag-effort-head{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:18px;padding:1px 0;font-size:12px;line-height:16px;overflow-y:clip;overflow-clip-margin:10px}.ces-ag-effort-title{display:inline-flex;align-items:center;gap:6px;color:inherit;font-weight:500;opacity:.9}.ces-ag-effort-value{position:relative;z-index:1;display:inline-block;font-size:12px;font-weight:600;transition:color .15s}.ces-ag-effort-value::after{content:'';position:absolute;top:50%;left:50%;width:52px;height:26px;border-radius:999px;transform:translate(-50%,-50%) scale(.6);background:radial-gradient(ellipse,var(--ces-glow-color,rgba(168,85,247,.85)),var(--ces-glow-color,rgba(168,85,247,.45)) 45%,rgba(168,85,247,0) 75%);filter:blur(8px);pointer-events:none;opacity:0;z-index:-1}@keyframes ces-glow-flash{0%{opacity:.95;transform:translate(-50%,-50%) scale(.65);filter:blur(6px)}25%{opacity:1;transform:translate(-50%,-50%) scale(1.15);filter:blur(8px)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.5);filter:blur(14px)}}@keyframes ces-text-bloom{0%{text-shadow:0 0 8px var(--ces-glow-color,#c084fc)}30%{text-shadow:0 0 14px var(--ces-glow-color,#c084fc),0 0 3px #fff}100%{text-shadow:none}}.ces-ag-effort-value.is-glowing{animation:ces-text-bloom .4s cubic-bezier(.16,1,.3,1) forwards}.ces-ag-effort-value.is-glowing::after{animation:ces-glow-flash .4s cubic-bezier(.16,1,.3,1) forwards}@media (prefers-reduced-motion:reduce){.ces-panel-shaking,.ces-ag-effort-value.is-glowing,.ces-ag-effort-value.is-glowing::after,.ces-ag-effort-value.ces-text-rise,.ces-ag-effort-value.is-claude-changing{animation:none!important}}html[data-ces-slider-ready='1'] [role='menu']:has([data-testid='model-selector-effort-option']):not(:has([data-testid='model-selector-panel'])),html[data-ces-slider-ready='1'] div[role='presentation']:has(>[role='menu'] [data-testid='model-selector-effort-option']):not(:has([data-testid='model-selector-panel'])),html[data-ces-slider-ready='1'] [role='menu']:has([data-testid='orchestrator-picker-effort']):not(:has([data-testid='model-selector-panel'])),html[data-ces-slider-ready='1'] div[role='presentation']:has([data-testid='orchestrator-picker-effort']):not(:has([data-testid='model-selector-panel'])),html[data-ces-slider-ready='1'] [data-testid='orchestrator-picker-effort']:not(:has([data-testid='model-selector-panel'])),html[data-ces-slider-ready='1'] [data-ag-cs-orch-l3='1']{display:none!important;visibility:hidden!important;pointer-events:none!important;opacity:0!important}html[data-ces-slider-ready='1'] [role='menuitem']:has([data-testid='model-selector-effort-group'])>span.shrink-0:last-child,html[data-ces-slider-ready='1'] [data-ces-orch-row='1']>svg:last-child:not(:first-child):not(.lucide-check),html[data-ces-slider-ready='1'] [data-ces-orch-row='1']>span:last-child:not(:first-child):has(>svg:only-child:not(.lucide-check)),html[data-ces-slider-ready='1'] [data-ces-orch-row='1']>*:last-child>svg:last-child:not(.lucide-check){display:none!important}html[data-ces-slider-ready='1'] [role='menuitem']:has([data-testid='model-selector-effort-group'])>.group-hover\\:hidden{display:flex!important}[role='menuitem'][data-ces-model-selected='true'],[data-ces-orch-row='1'][data-ces-model-selected='true']{background:rgba(128,128,145,.14)}.ces-set{position:fixed;z-index:2147483646;width:268px;padding:12px;border-radius:10px;background:rgba(24,24,28,.96);color:#f4f4f6;border:1px solid rgba(255,255,255,.12);box-shadow:0 12px 32px rgba(0,0,0,.55);backdrop-filter:blur(12px);font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12px;box-sizing:border-box;user-select:none}.ces-set-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08);font-weight:600;font-size:12.5px}.ces-set-ver{font-size:11px;font-weight:400;opacity:.55}.ces-set-group{margin-bottom:10px}.ces-set-label{margin-bottom:5px;font-size:11px;opacity:.72}.ces-set-opts{display:flex;gap:4px}.ces-set-opt{flex:1;padding:5px 6px;border-radius:6px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#d4d4d8;font-size:11.5px;cursor:pointer;text-align:center;transition:all .12s ease}.ces-set-opt:hover{background:rgba(255,255,255,.1);color:#fff}.ces-set-opt.is-on{background:rgba(139,92,246,.28);border-color:rgba(139,92,246,.75);color:#fff;font-weight:600}.ces-set-actions{display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08)}.ces-set-btn{flex:1;padding:5px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#e4e4e7;font-size:11px;cursor:pointer}.ces-set-btn:hover{background:rgba(255,255,255,.14)}[data-testid='model-selector-panel'] .ces-ag-section[data-effort-slot='true']{grid-template-rows:auto auto}[data-testid='model-selector-panel'] .ces-ag-section[data-effort-slot='true']>[role='separator']{grid-row:1;grid-column:1}[data-testid='model-selector-panel'] .ces-ag-section[data-effort-slot='true']>:is(.ces-ag-effort-row,[data-testid='orchestrator-effort-bar']){grid-row:2!important;grid-column:1!important}";
++SLIDER_CSS += [
++  ".ces-fill{will-change:transform}",
++  ".ces-root[data-ces-dragging] .ces-fill{width:100%;transform-origin:left center}",
++  ".ces-root[data-ces-dragging] :is(.ces-stars,.ces-energy,.ces-claude-canvas){visibility:hidden}",
++  ".ces-root[data-ces-dragging] :is(.ces-star,.ces-energy__sweep){animation-play-state:paused}",
++  ".ces-root[data-ces-dragging] .ces-track{transition:none}"
++].join("");
+ function installStyles(doc) {
+ var d = doc || (typeof document !== "undefined" ? document : null);
+ if (!d || !d.head) return null;
+@@ -1105,7 +1113,6 @@ var claudeLastTs = 0;
+ var claudeIntensity = 0;
+ var claudeSpeed = 0;
+ var dragging = false;
+-var buttonDown = false;
+ var draftPct = null;
+ var draftIndex = null;
+ var snapIndex = null;
+@@ -1122,6 +1129,9 @@ var _lastSlow = -1;
+ var dragTrackRect = null;
+ var dragSnap = null;
+ var dragRafId = null;
++var dragMode = null;
++var dragPointerId = null;
++var observingOutsideTrack = false;
+ var lastSnap = null;
+ var _lastShownIdx = -1;
+ var _lastFillCss = "";
+@@ -1205,7 +1215,7 @@ var ka = _normEffTxt(curVal);
+ if (chg || (label && (!curVal.trim() || (ka && !_sameEffTxt(curVal, label))))) {
+ valEl.__cesLastLabel = label; valEl.__cesLastKey = nk;
+ if (!_sameEffTxt(curVal, label)) valEl.textContent = label;
+-if (had && chg && !isPrismMotionOff(doc, win)) _reAnim(valEl, ["ces-text-rise", "is-claude-changing"], "_c", 260);
++if (had && chg && !dragging && !isPrismMotionOff(doc, win)) _reAnim(valEl, ["ces-text-rise", "is-claude-changing"], "_c", 260);
+ }
+ var vColor = snap.locked ? "" : valueColorFor(label, safeIdx, count, isMax, snap.hasOffFirst, snap.isClaude, resolvePrismAccentTone(doc, win)) || "";
+ if (valEl.style && valEl.style.color !== vColor) valEl.style.color = vColor;
+@@ -1321,6 +1331,7 @@ claudeRafId = _rAF(stepClaudeCanvas);
+ if (claudeRafId === null) stepClaudeCanvas(nowMs());
+ }
+ function applyVisualPct(snap, effectivePct, showIdx) {
++if (dragging && !snap.isClaude) { applyDragVisual(snap, effectivePct, showIdx); return; }
+ lastSnap = snap;
+ var p = clamp01(effectivePct), count = snap.count, safeIdx = Math.max(0, Math.min(Math.max(0, count - 1), showIdx));
+ var levelItem = snap.levels[safeIdx], label = levelItem ? levelItem.label : "", theme = snap.theme || "codex";
+@@ -1338,10 +1349,8 @@ var curTone = resolvePrismAccentTone(doc, win), motOff = isPrismMotionOff(doc, w
+ var offsetCss = knobOffsetOf(p, KNOB_RADIUS), fillBg = fillBackgroundFor(p, snap.energyStart, snap.energyEnd, snap.isClaude, curTone);
+ if (offsetCss !== _lastFillCss) { _lastFillCss = offsetCss; trackEl.style.setProperty("--ces-fill", offsetCss); }
+ if (fillBg !== _lastFillBg) { _lastFillBg = fillBg; trackEl.style.setProperty("--ces-fill-bg", fillBg); }
+-var kW = dragging ? (_dLW || trackEl.clientWidth || (dragTrackRect && dragTrackRect.width) || 0) : 0;
+-if (kW > 0) {
+-if (!_knobTf) { knobEl.style.left = "0px"; _knobTf = true; }
+-knobEl.style.transform = "translate3d(" + (KNOB_RADIUS + (kW - KNOB_RADIUS * 2) * p).toFixed(1) + "px,0,0)";
++if (dragging && _dLW > 0) {
++  knobEl.style.transform = "translate3d(" + (KNOB_RADIUS + (_dLW - KNOB_RADIUS * 2) * p).toFixed(1) + "px,0,0)";
+ } else if (_knobTf) { knobEl.style.left = knobEl.style.transform = ""; _knobTf = false; }
+ claudeIntensity = !motOff && curTone !== "mono" && snap.isClaude && !snap.locked && count > 1 ? claudeIntensityFor(p, snap.energyStart) : 0;
+ claudeSpeed = claudeSpeedFor(p, snap.energyStart);
+@@ -1433,11 +1442,27 @@ function pctAtClientX(clientX) {
+ var rect = _trkRect(0);
+ return rect && rect.width > 0 ? clamp01((clientX - rect.left - KNOB_RADIUS) / Math.max(1, rect.width - KNOB_RADIUS * 2)) : null;
+ }
++// The continuous part of a drag changes only two compositor transforms.
++// Keep the tier label and accessibility value synchronized with each detent.
++function applyDragVisual(snap, pct, index) {
++  if (_dLW > 0) {
++    var x = KNOB_RADIUS + Math.max(0, _dLW - KNOB_RADIUS * 2) * clamp01(pct);
++    knobEl.style.transform = "translate3d(" + x.toFixed(1) + "px,0,0)";
++    fillEl.style.transform = "scaleX(" + Math.min(1, x / _dLW).toFixed(5) + ")";
++  }
++  syncDragTier(snap, index);
++}
++function syncDragTier(snap, index) {
++  if (index === _lastShownIdx) return;
++  _sa(rootEl, "aria-valuenow", String(index));
++  _sa(rootEl, "aria-valuetext", snap.levels[index]?.label || "");
++  if (!snap.isClaude) renderTicks(snap, pctFromIndex(index, snap.count));
++  _syncHeadTrig(snap, index);
++}
+ function _flushDragVisual() {
+-dragRafId = null;
+-if (destroyed || !dragging) return;
+-var ds = dragSnap || readSeatSnapshot(), dm = ensureMotion(ds);
+-applyVisualPct(ds, dm.x, draftIndex !== null ? draftIndex : ds.officialIndex);
++  dragRafId = null;
++  if (destroyed || !dragging || draftPct === null) return;
++  applyVisualPct(dragSnap, draftPct, draftIndex);
+ }
+ function moveToClientX(clientX, isInitialDown) {
+ var snap = (dragging && dragSnap) || readSeatSnapshot();
+@@ -1451,20 +1476,18 @@ if (dt > 1e-4 && dt < 0.25) ptrSpeed = ptrSpeed * (1 - _PS_EMA) + ((ptrPct - las
+ } else ptrSpeed = 0;
+ lastPtrPct = ptrPct; lastPtrMs = now;
+ var nowIndex;
+-if (motionMode(win, null, doc) === "fast") {
++if (dragMode === "fast") {
+ nowIndex = isInitialDown ? indexFromPct(ptrPct, snap.count) : detentTargetIndex(detentIndex >= 0 && detentIndex < snap.count ? detentIndex : snap.officialIndex, ptrPct, snap.count);
+ detentIndex = detentTargetIndex(nowIndex, ptrPct, snap.count) === nowIndex ? nowIndex : ptrPct < pctFromIndex(nowIndex, snap.count) ? Math.max(0, nowIndex - 1) : Math.min(snap.count - 1, nowIndex + 1);
+ } else nowIndex = indexFromPct(ptrPct, snap.count);
+ draftPct = ptrPct; draftIndex = nowIndex;
+ var m = ensureMotion(snap);
+ m.x = m.target = ptrPct; m.v = m.a = 0;
+-stopFrames();
+ if (isInitialDown || !win || typeof win.requestAnimationFrame !== "function") {
+-_cancelDragRaf();
+-applyVisualPct(snap, ptrPct, nowIndex);
++  applyVisualPct(snap, ptrPct, nowIndex);
+ } else {
+-if (nowIndex !== _lastShownIdx) { _lastShownIdx = nowIndex; _syncValOnly(snap, nowIndex); }
+-if (dragRafId === null) dragRafId = _rAF(_flushDragVisual);
++  syncDragTier(snap, nowIndex);
++  if (dragRafId === null) dragRafId = _rAF(_flushDragVisual);
+ }
+ }
+ function _settle(snap, idx, imm, startX) {
+@@ -1479,8 +1502,10 @@ applyVisualPct(snap, m.x, idx);
+ startFrames();
+ }
+ }
+-function endDrag(clientX) {
++function endDrag(clientX, cancelled) {
+ if (!dragging) return;
++stopObservingOutsideTrack();
++dragPointerId = null;
+ _cancelDragRaf();
+ var snap = dragSnap || readSeatSnapshot();
+ var ptrPct = draftPct !== null ? draftPct : pctFromIndex(snap.officialIndex, snap.count);
+@@ -1488,12 +1513,15 @@ if (typeof clientX === "number") {
+ var p = pctAtClientX(clientX);
+ if (p !== null) ptrPct = p;
+ }
+-var mode = motionMode(win, null, doc), finalIndex;
+-if (mode === "fast") finalIndex = detentTargetIndex(detentIndex >= 0 && detentIndex < snap.count ? detentIndex : snap.officialIndex, ptrPct, snap.count);
++var mode = dragMode || motionMode(win, null, doc), finalIndex;
++if (cancelled) finalIndex = snap.officialIndex;
++else if (mode === "fast") finalIndex = detentTargetIndex(detentIndex >= 0 && detentIndex < snap.count ? detentIndex : snap.officialIndex, ptrPct, snap.count);
+ else if (mode === "quick") finalIndex = indexFromPct(ptrPct, snap.count);
+ else finalIndex = releaseIndexFor(ptrPct, ptrSpeed, lastPtrMs > 0 ? Math.max(0, (nowMs() - lastPtrMs) / 1000) : 1, snap.count);
+-dragging = buttonDown = false;
+-dragTrackRect = dragSnap = draftPct = draftIndex = lastPtrPct = null;
++dragging = false;
++dragTrackRect = dragSnap = draftPct = draftIndex = lastPtrPct = dragMode = null;
++rootEl.removeAttribute("data-ces-dragging");
++fillEl.style.background = fillEl.style.transform = "";
+ _dLW = 0;
+ detentIndex = _lastShownIdx = -1;
+ ptrSpeed = 0;
+@@ -1503,38 +1531,69 @@ _settle(readSeatSnapshot(), finalIndex, mode === "quick", ptrPct);
+ }
+ function swallowEvent(ev) { if (ev && typeof ev.stopPropagation === "function") ev.stopPropagation(); }
+ function onPointerDown(ev) {
+-if (ev && typeof ev.button === "number" && ev.button !== 0) return;
++if (dragging || (ev && typeof ev.button === "number" && ev.button !== 0)) return;
+ var snap = readSeatSnapshot();
+ if (snap.locked || snap.count <= 1) return;
+ swallowEvent(ev);
+ if (typeof ev.preventDefault === "function") ev.preventDefault();
+-dragging = buttonDown = true;
++dragging = true;
++dragPointerId = ev.pointerId ?? null;
+ dragSnap = snap;
+ dragTrackRect = trackEl.getBoundingClientRect ? trackEl.getBoundingClientRect() : null;
+ _dLW = trackEl.clientWidth || (dragTrackRect && dragTrackRect.width) || 0;
+ if (dragTrackRect && dragTrackRect.width > 0) { cachedTrackRect = dragTrackRect; cachedTrackRectAt = nowMs(); }
+ _lastCmtIdx = detentIndex = snap.officialIndex;
+ snapIndex = lastPtrPct = null;
++dragMode = motionMode(win, null, doc);
++stopFrames();
++_lastShownIdx = -1;
++if (!snap.isClaude) {
++  _sa(rootEl, "data-ces-dragging", "true");
++  fillEl.style.background = fillBackgroundFor(1, snap.energyStart, snap.energyEnd, false, resolvePrismAccentTone(doc, win));
++}
++knobEl.style.left = "0px";
++_knobTf = true;
+ try { if (trackEl.setPointerCapture && ev.pointerId !== undefined) trackEl.setPointerCapture(ev.pointerId); } catch (err) {}
+ moveToClientX(ev.clientX, true);
+ }
++function ownsDragPointer(ev) {
++  return dragging && (dragPointerId === null || ev?.pointerId == null || ev.pointerId === dragPointerId);
++}
+ function onPointerMove(ev) {
+-if (!dragging || (ev && ev.buttons === 0 && !buttonDown)) return;
++if (!ownsDragPointer(ev)) return;
++if (ev.buttons === 0) { endDrag(undefined, true); return; }
+ swallowEvent(ev);
+ moveToClientX(ev.clientX, false);
+ }
+ function onPointerUp(ev) {
+-if (!dragging) return;
++if (!ownsDragPointer(ev)) return;
+ swallowEvent(ev);
+-buttonDown = false;
+-try { if (trackEl.releasePointerCapture && ev && ev.pointerId !== undefined) trackEl.releasePointerCapture(ev.pointerId); } catch (err) {}
+ endDrag(ev && typeof ev.clientX === "number" ? ev.clientX : undefined);
++try { if (trackEl.releasePointerCapture && ev && ev.pointerId !== undefined) trackEl.releasePointerCapture(ev.pointerId); } catch (err) {}
+ }
+ function onPointerCancel(ev) {
+-if (!dragging) return;
++if (!ownsDragPointer(ev)) return;
+ if (!ev || ev.type !== "blur") swallowEvent(ev);
+-buttonDown = false;
+-endDrag();
++endDrag(undefined, true);
++}
++// Pointer capture may be interrupted while the button is still pressed.
++// Keep following that pointer until release, cancellation or window blur.
++var outsideEvents = ["pointermove", "pointerup", "pointercancel"];
++function onOutsideTrack(ev) {
++  if (!ownsDragPointer(ev) || trackEl.contains(ev.target)) return;
++  if (ev.type === "pointermove") onPointerMove(ev);
++  else if (ev.type === "pointerup") onPointerUp(ev);
++  else onPointerCancel(ev);
++}
++function onLostPointerCapture(ev) {
++  if (!ownsDragPointer(ev) || observingOutsideTrack) return;
++  observingOutsideTrack = true;
++  for (var type of outsideEvents) doc.addEventListener?.(type, onOutsideTrack, true);
++}
++function stopObservingOutsideTrack() {
++  if (!observingOutsideTrack) return;
++  observingOutsideTrack = false;
++  for (var type of outsideEvents) doc.removeEventListener?.(type, onOutsideTrack, true);
+ }
+ function onKeyDown(ev) {
+ var snap = readSeatSnapshot();
+@@ -1552,7 +1611,7 @@ commitAtIndex(nextIdx, "key");
+ _settle(readSeatSnapshot(), nextIdx, motionMode(win, null, doc) === "quick");
+ }
+ function onBlockMenuClose(ev) { swallowEvent(ev); }
+-var _trkEvs = [["pointerdown", onPointerDown], ["pointermove", onPointerMove], ["pointerup", onPointerUp], ["pointercancel", onPointerCancel], ["lostpointercapture", onPointerCancel], ["click", onBlockMenuClose], ["mouseup", onBlockMenuClose]];
++var _trkEvs = [["pointerdown", onPointerDown], ["pointermove", onPointerMove], ["pointerup", onPointerUp], ["pointercancel", onPointerCancel], ["lostpointercapture", onLostPointerCapture], ["click", onBlockMenuClose], ["mouseup", onBlockMenuClose]];
+ for (var _ei = 0; _ei < _trkEvs.length; _ei += 1) trackEl.addEventListener(_trkEvs[_ei][0], _trkEvs[_ei][1]);
+ rootEl.addEventListener("keydown", onKeyDown);
+ function onWinResize() { dragTrackRect = cachedTrackRect = null; _dLW = cachedTrackRectAt = 0; }
+@@ -1584,6 +1643,7 @@ applyVisualPct(initSnap, initMotion.x, initSnap.officialIndex);
+ return {
+ unmount: function () {
+ destroyed = true;
++stopObservingOutsideTrack();
+ stopFrames();
+ _cancelDragRaf();
+ _stopClRaf();

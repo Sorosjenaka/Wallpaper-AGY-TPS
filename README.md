@@ -45,6 +45,26 @@ open "$HOME/Applications/Antigravity Kit.app"
 
 Untuk menjalankannya pada login berikutnya, gunakan `sh ./install-macos.sh --start-at-login`. Installer juga menerima `--app-path "/lokasi/Antigravity.app/Contents/MacOS/Antigravity"`.
 
+## Mode Obsidian Prism
+
+Mode opsional ini menaruh TPS, cache, dan konteks di baris bawah composer. Klik metrik untuk membuka rincian TTFT atau panel konteks. Mode ini juga menambahkan slider **Reasoning Effort**, maskot animasi, dan **View Usage**. Wallpaper dan menu **Tema** datang dari Antigravity Kit.
+
+Tutup Antigravity, lalu jalankan salah satu perintah ini dari folder repo. Setelah itu buka kembali **Antigravity Kit**.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\install-windows.ps1 -WithPrism
+```
+
+```sh
+sh ./install-macos.sh --with-prism
+```
+
+Installer mengambil source Prism **v1.0.8-beta.2** di revisi yang dipatok dan menerapkan patch slider lokal. Saat slider digeser, knob dan isian mengikuti pointer tanpa menggambar ulang partikel pada setiap gerakan. Mode ini diuji di Windows. Jalur macOS tersedia dengan pemeriksaan sintaks, dan masih memerlukan pengujian langsung di Mac.
+
+Mode Kit menyembunyikan notifikasi otomatis **Memory & Conversation DB Guard**. Pemeriksaan dan arsip manual tetap tersedia lewat pengaturan Prism.
+
+Untuk kembali ke mode TPS Kit, jalankan installer dengan `-WithoutPrism` di Windows atau `--without-prism` di macOS. Instalasi Prism dan pengaturannya tetap tersimpan agar bisa diaktifkan lagi. Kredit, versi sumber, dan lisensi patch ada di [dokumen Prism](prism/README.md).
+
 ## Pengaturan wallpaper
 
 File sumber hingga **4K** dan **300 MB** diproses secara lokal. Kit menyimpan versi WebM hingga **3840 × 2160**, **120 detik**, dan **60 FPS**. Video diputar tanpa audio dan dijeda saat jendela chat tersembunyi. Untuk impor berikutnya, Anda dapat memilih batas `-MaxFps 30` atau `-MaxFps 120` di Windows. Di macOS gunakan `sh ./install-macos.sh --max-fps 30` atau `--max-fps 120`.
@@ -76,4 +96,4 @@ FPS aktual bergantung pada file dan perangkat. Refresh rate layar seperti 240 Hz
 
 Tutup Antigravity, jalankan `git pull` di folder repo, lalu jalankan installer lagi. Untuk melepas paket, gunakan `powershell -NoProfile -ExecutionPolicy RemoteSigned -File .\install-windows.ps1 -Uninstall` atau `sh ./install-macos.sh --uninstall`. Wallpaper yang sudah diimpor tetap disimpan di direktori data lokal pengguna.
 
-Peluncur menggunakan pipe Chromium lokal. Plugin membaca metadata sesi melalui [sidecar Antigravity](https://antigravity.google/docs/sidecars) dan menyampaikan metrik ke meter lokal. Wallpaper, riwayat, dan cache sesi disimpan di perangkat.
+Peluncur menggunakan pipe Chromium lokal pada mode standar dan port loopback sementara pada mode Prism. Plugin membaca metadata sesi melalui [sidecar Antigravity](https://antigravity.google/docs/sidecars) dan menyampaikan metrik ke meter lokal. Wallpaper, riwayat, dan cache sesi disimpan di perangkat.

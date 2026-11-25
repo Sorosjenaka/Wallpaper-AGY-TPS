@@ -1,2 +1,4 @@
 * text=auto eol=lf
 *.ps1 text eol=crlf
+prism/*.patch -whitespace
+prism/LICENSE whitespace=-blank-at-eof

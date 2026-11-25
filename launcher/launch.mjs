@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { changeTheme, currentThemes, loadThemes, mediaPath, uploadLimit } from './themes.mjs';
-import { findAntigravity, kitFolder } from './paths.mjs';
+import { findAntigravity, home, kitFolder, readSettings } from './paths.mjs';
 import { closeTps, refreshTps } from './tps.mjs';
 
 const exe = findAntigravity();
@@ -15,6 +15,10 @@ if (!exe) {
   process.exit(1);
 }
 const folder = dirname(fileURLToPath(import.meta.url));
+const usePrism = readSettings().prism === true;
+const profileRoot = process.platform === 'darwin'
+  ? join(home, 'Library', 'Application Support')
+  : process.env.APPDATA || join(home, 'AppData', 'Roaming');
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
 const lock = join(kitFolder, 'instance.lock');
@@ -43,6 +47,11 @@ const exists = path => stat(path).then(() => true, () => false);
 // wallpaper supervisor.
 const isSupervisor = pid => new Promise(resolve => {
   if (!alive(pid)) return resolve(false);
+  if (process.platform === 'darwin') {
+    execFile('/bin/ps', ['-p', String(pid), '-o', 'command='], (_, stdout) =>
+      resolve(String(stdout || '').includes(join(folder, 'launch.mjs'))));
+    return;
+  }
   const script = [
     `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"`,
     "if ($p -and $p.Name -eq 'node.exe' -and $p.CommandLine -like '*launch.mjs*') { 'yes' } else { 'no' }",
@@ -124,14 +133,21 @@ async function lockInstance() {
   }
 }
 
-class Pipe extends EventEmitter {
-  constructor(write, read) {
+class DevTools extends EventEmitter {
+  constructor({ write, read, socket }) {
     super();
     this.write = write;
     this.sequence = 0;
     this.pending = new Map();
     this.parts = [];
     this.closed = false;
+    this.socket = socket;
+    if (socket) {
+      socket.addEventListener('message', event => this.handle(event.data));
+      socket.addEventListener('close', () => this.close());
+      socket.addEventListener('error', () => this.close());
+      return;
+    }
     read.on('data', data => this.receive(data));
     read.on('end', () => this.close());
     read.on('error', () => this.close());
@@ -139,7 +155,7 @@ class Pipe extends EventEmitter {
   }
 
   command(method, params = {}, sessionId = undefined) {
-    if (this.closed) return Promise.reject(new Error('Pipe closed'));
+    if (this.closed) return Promise.reject(new Error('Koneksi DevTools tertutup'));
     return new Promise((resolve, reject) => {
       const id = ++this.sequence;
       const alarm = setTimeout(() => {
@@ -147,7 +163,9 @@ class Pipe extends EventEmitter {
         reject(new Error(method + ' timed out'));
       }, 3500);
       this.pending.set(id, { resolve, reject, alarm });
-      this.write.write(JSON.stringify({ id, method, params, sessionId }) + '\0');
+      const message = JSON.stringify({ id, method, params, sessionId });
+      if (this.socket) this.socket.send(message);
+      else this.write.write(message + '\0');
     });
   }
 
@@ -159,27 +177,55 @@ class Pipe extends EventEmitter {
       const message = Buffer.concat(this.parts).toString('utf8');
       this.parts = [];
       data = data.subarray(end + 1);
-      let value;
-      try { value = JSON.parse(message); } catch { continue; }
-      if (!value.id) { this.emit('notice', value); continue; }
-      const result = this.pending.get(value.id);
-      if (!result) continue;
-      this.pending.delete(value.id);
-      clearTimeout(result.alarm);
-      if (value.error) result.reject(new Error(value.error.message));
-      else result.resolve(value.result);
+      this.handle(message);
     }
+  }
+
+  handle(message) {
+    let value;
+    try { value = JSON.parse(message); } catch { return; }
+    if (!value.id) { this.emit('notice', value); return; }
+    const result = this.pending.get(value.id);
+    if (!result) return;
+    this.pending.delete(value.id);
+    clearTimeout(result.alarm);
+    if (value.error) result.reject(new Error(value.error.message));
+    else result.resolve(value.result);
   }
 
   close() {
     if (this.closed) return;
     this.closed = true;
+    if (this.socket && this.socket.readyState < WebSocket.CLOSING) this.socket.close();
     for (const waiter of this.pending.values()) {
       clearTimeout(waiter.alarm);
-      waiter.reject(new Error('Pipe closed'));
+      waiter.reject(new Error('Koneksi DevTools tertutup'));
     }
     this.pending.clear();
   }
+}
+
+async function connectPrismSocket(startedAt) {
+  const portFile = join(profileRoot, 'Antigravity', 'DevToolsActivePort');
+  const info = await stat(portFile).catch(() => null);
+  if (!info || info.mtimeMs < startedAt - 1000) return null;
+  const [line, route] = (await readFile(portFile, 'utf8').catch(() => '')).trim().split(/\r?\n/);
+  const port = Number(line);
+  if (!Number.isInteger(port) || port < 1 || port > 65535 ||
+      !/^\/devtools\/browser\/[0-9a-f-]{36}$/i.test(route)) return null;
+  const socket = new WebSocket(`ws://127.0.0.1:${port}${route}`);
+  const connected = await new Promise(resolve => {
+    const timeout = setTimeout(() => resolve(false), 1000);
+    const settle = value => {
+      clearTimeout(timeout);
+      resolve(value);
+    };
+    socket.addEventListener('open', () => settle(true), { once: true });
+    socket.addEventListener('error', () => settle(false), { once: true });
+  });
+  if (connected) return socket;
+  socket.close();
+  return null;
 }
 
 async function report(status) {
@@ -308,23 +354,16 @@ async function main() {
   }
   let child;
   let pipe;
+  let startedAt;
   let lastExitAt = 0;
   let layoutWatcher;
   let layoutChanged = false;
   const views = new Map();
   const probes = new Map();
-  const spawnChild = () => {
+  const attach = connection => {
+    pipe = connection;
     views.clear();
     probes.clear();
-    child = spawn(exe, ['--remote-debugging-pipe'], {
-      env, windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'],
-    });
-    child.on('error', error => log('spawn error: ' + error.message));
-    child.on('exit', (code, signal) => {
-      lastExitAt = Date.now();
-      log('antigravity exited code=' + code + ' signal=' + signal);
-    });
-    pipe = new Pipe(child.stdio[3], child.stdio[4]);
     pipe.on('notice', event => {
       const view = views.get(event.sessionId);
       if (event.method === 'Target.detachedFromTarget') views.delete(event.params.sessionId);
@@ -351,8 +390,21 @@ async function main() {
         })().catch(() => {});
       }
     });
+  };
+  const spawnChild = () => {
+    startedAt = Date.now();
+    lastExitAt = 0;
+    pipe = null;
+    child = spawn(exe, [usePrism ? '--remote-debugging-port=0' : '--remote-debugging-pipe'], {
+      env, windowsHide: true, stdio: usePrism ? 'ignore' : ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'],
+    });
+    child.on('error', error => log('spawn error: ' + error.message));
+    child.on('exit', (code, signal) => {
+      lastExitAt = Date.now();
+      log('antigravity exited code=' + code + ' signal=' + signal);
+    });
+    if (!usePrism) attach(new DevTools({ write: child.stdio[3], read: child.stdio[4] }));
     log('spawned antigravity pid=' + child.pid);
-    return child;
   };
 
   try {
@@ -370,7 +422,15 @@ async function main() {
       let rounds = 0;
       while (true) {
         try {
-          if (child.exitCode !== null) break;
+          if (child.exitCode !== null || child.signalCode !== null || !child.pid) break;
+          if (usePrism && (!pipe || pipe.closed)) {
+            const socket = await connectPrismSocket(startedAt);
+            if (!socket) {
+              await delay(750);
+              continue;
+            }
+            attach(new DevTools({ socket }));
+          }
           if (layoutChanged) {
             layoutChanged = false;
             [style, renderer] = await readLayout();
@@ -408,8 +468,8 @@ async function main() {
           }
         } catch (error) {
           log('loop error: ' + (error && error.message || error));
-          if (child.exitCode !== null) break;
-          if (pipe.closed) {
+          if (child.exitCode !== null || child.signalCode !== null || !child.pid) break;
+          if (!usePrism && pipe?.closed) {
             log('pipe closed while app is alive; restarting it');
             child.kill();
             await delay(1200);
@@ -419,6 +479,7 @@ async function main() {
         await delay(1000);
       }
 
+      pipe?.close();
       const exitAt = lastExitAt || Date.now();
       log('antigravity closed at ' + new Date(exitAt).toISOString() + ', waiting for next launch');
       await report({ status: 'waiting', pid: null });

@@ -2,6 +2,8 @@
 param(
     [switch]$StartAtLogin,
     [switch]$Uninstall,
+    [switch]$WithPrism,
+    [switch]$WithoutPrism,
     [ValidateSet(30, 60, 120)][int]$MaxFps,
     [string]$AntigravityPath
 )
@@ -36,6 +38,8 @@ $ffmpeg = (Get-Command ffmpeg.exe).Source
 $setupArgs = @('install', '--ffmpeg-path', $ffmpeg)
 if ($AntigravityPath) { $setupArgs += @('--app-path', $AntigravityPath) }
 if ($MaxFps) { $setupArgs += @('--max-fps', [string]$MaxFps) }
+if ($WithPrism) { $setupArgs += '--with-prism' }
+if ($WithoutPrism) { $setupArgs += '--without-prism' }
 & $node $setup @setupArgs
 if ($LASTEXITCODE -ne 0) { throw 'Instalasi paket gagal.' }
 

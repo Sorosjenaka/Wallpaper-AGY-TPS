@@ -58,6 +58,7 @@
 
 #agy-tps-meter > span + span { color: #c4bec4; }
 #agy-tps-meter[data-writing="true"] { border-color: #bd8795; }
+#agy-tps-meter[hidden] { display: none; }
 
 .aw-wallpaper-active .aw-pane .agy-user-bubble,
 .aw-wallpaper-active .aw-pane .surface-composer-card {
